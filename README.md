@@ -4,6 +4,9 @@ Test a prompt across multiple LLM providers and auto-grade the output against a 
 
 Write a prompt template with `{{variables}}`, define a grading rubric, add test cases, and run. Each run calls the model, then asks a model to score the output against your rubric — so you get a number and a reason, not just raw text to eyeball. Run history tracks scores across runs so you can compare quality across providers and models.
 
+<img width="1440" height="835" alt="image" src="https://github.com/user-attachments/assets/d1bd2943-f7bc-424f-b1f7-7828b244854e" />
+
+
 ## Setup
 
 ```bash
