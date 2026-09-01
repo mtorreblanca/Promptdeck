@@ -43,11 +43,26 @@ Open the printed local URL. Restart `npm run dev` any time you change `.env` —
 
 GPT/Gemini/DeepSeek model IDs change often, so those are free-text fields — check the provider's docs for the current model name. Anthropic keeps a curated dropdown.
 
+## Deploying (Vercel)
+
+The `/api/complete` proxy has two implementations sharing the same logic (`server/complete.js`):
+
+- **`server/router.js`** — a Vite dev-server middleware, used by `npm run dev`.
+- **`api/complete.js`** — a Vercel serverless function, used in production.
+
+To deploy:
+
+1. Push the repo to GitHub and import it in [Vercel](https://vercel.com/new) — it auto-detects the Vite framework, no `vercel.json` needed.
+2. In the Vercel project's **Settings → Environment Variables**, add whichever provider keys you use (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`) — same names as `.env.example`. They're only read server-side inside `api/complete.js`, never bundled into the client.
+3. Deploy. Vercel builds the static frontend (`vite build` → `dist/`) and deploys `api/complete.js` as a serverless function automatically.
+
+The "Custom / self-hosted" provider still works after deploying, but only if the endpoint you point it at (e.g. Ollama) is itself publicly reachable — `localhost` on your machine isn't reachable from Vercel's servers.
+
 ## Architecture
 
 - **Frontend** — React + Vite. `src/components/PromptEvaluator` is the main UI; `src/lib/llm.js` calls the local API; `src/lib/history.js` persists run history to `localStorage`.
-- **Backend** — a Vite dev-server middleware (`server/router.js`), not a separate process. It receives `POST /api/complete`, keeps provider API keys server-side (never sent to the browser), and dispatches to a per-provider adapter in `server/providers/`.
-- **Adding a provider** — add a new file in `server/providers/` that exports `call(body, apiKey) -> { text, model }`, wire it into the `switch` in `server/router.js`, and add it to the `PROVIDERS` list in `src/lib/llm.js`.
+- **Backend** — `server/complete.js` holds the provider dispatch/validation logic, shared by two thin entry points: `server/router.js` (a Vite dev-server middleware, used by `npm run dev`) and `api/complete.js` (a Vercel serverless function, used in production). Both receive `POST /api/complete`, keep provider API keys server-side, and dispatch to a per-provider adapter in `server/providers/`.
+- **Adding a provider** — add a new file in `server/providers/` that exports `call(body, apiKey) -> { text, model }`, wire it into the `switch` in `server/complete.js`, and add it to the `PROVIDERS` list in `src/lib/llm.js`.
 
 ## Tech stack
 
