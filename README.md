@@ -59,7 +59,28 @@ To deploy:
 2. In the Vercel project's **Settings → Environment Variables**, add whichever provider keys you use (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`) — same names as `.env.example`. They're only read server-side inside `api/complete.js`, never bundled into the client.
 3. Deploy. Vercel builds the static frontend (`vite build` → `dist/`) and deploys `api/complete.js` as a serverless function automatically.
 
-The "Custom / self-hosted" provider still works after deploying, but only if the endpoint you point it at (e.g. Ollama) is itself publicly reachable — `localhost` on your machine isn't reachable from Vercel's servers.
+The "Custom / self-hosted" provider is **local-only by default**: it lets the browser choose a URL for the server to fetch, which is fine on your own machine but would make a public deployment an open proxy (SSRF). In production it's hidden and rejected unless you set both `ALLOW_CUSTOM_PROVIDER=true` and `VITE_ENABLE_CUSTOM_PROVIDER=true`.
+
+## Security
+
+A public deployment spends **your** API keys on every request, so `/api/complete` is hardened:
+
+- **Keys stay server-side.** Provider keys are read only in `server/` and `api/`, never bundled into the client. The Gemini key is sent as a header, not in the URL.
+- **Strict request validation** (`server/validate.js`). Only `model`, `system`, `messages` and `max_tokens` are forwarded; anything else (tools, `n`, streaming, ...) is dropped. Model IDs are pattern-checked (Anthropic models must be in the app's curated list), `max_tokens` is capped at 2000, and message count, message size and total body size are bounded.
+- **Rate limiting** (`server/rateLimit.js`). 10 requests/minute per IP by default (`RATE_LIMIT_PER_MINUTE`). This is per serverless instance, so it's a guard against casual abuse, not a global quota.
+- **No SSRF.** The custom provider is disabled in production by default, and its URL is validated (http/https only, no embedded credentials).
+- **Timeouts and clean errors.** Provider calls time out after 60s; provider failures return `502` with the provider's message, and unexpected errors never leak internals.
+
+**Also recommended:** set a monthly spend limit in each provider's console. It's the only true hard cap on cost.
+
+## Tests
+
+```bash
+npm test        # Vitest: request validation, rate limiting, provider adapters, API handler
+npm run lint
+```
+
+CI (GitHub Actions) runs lint, tests and the production build on every push and pull request.
 
 ## Architecture
 

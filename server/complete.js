@@ -1,6 +1,8 @@
 import * as anthropic from "./providers/anthropic.js";
 import * as gemini from "./providers/gemini.js";
 import * as openaiCompatible from "./providers/openaiCompatible.js";
+import { HttpError } from "./errors.js";
+import { validateCustomBaseUrl, validateLlmBody } from "./validate.js";
 
 const NAMED_PROVIDER_DEFAULTS = {
   openai: "https://api.openai.com/v1",
@@ -44,42 +46,41 @@ async function callProvider(provider, llmBody, config) {
   }
 }
 
-// getProviderConfig(provider) -> { apiKey, baseUrl? } sourced from server env,
-// used for every named provider (anthropic/openai/gemini/deepseek).
-// Shared by the Vite dev-server middleware (server/router.js) and the Vercel
-// serverless function (api/complete.js) so the validation rules never drift.
-export async function resolveCompletion(parsedBody, getProviderConfig) {
-  const { provider, baseUrl: clientBaseUrl, apiKey: clientApiKey, ...llmBody } = parsedBody;
-
-  if (!provider) {
-    const error = new Error('Request is missing a "provider" field.');
-    error.status = 400;
-    throw error;
+/**
+ * Validates a /api/complete request and dispatches it to the right provider adapter.
+ * Shared by the Vite dev-server middleware (server/router.js) and the Vercel
+ * serverless function (api/complete.js) so the validation rules never drift.
+ *
+ * options.allowCustom — whether the "custom" provider is enabled. It lets the
+ * client choose the URL the server fetches, which is fine on a developer's own
+ * machine but would turn a public deployment into an open proxy (SSRF), so it is
+ * OFF unless the caller explicitly enables it.
+ */
+export async function resolveCompletion(parsedBody, getProviderConfig, { allowCustom = false } = {}) {
+  if (typeof parsedBody !== "object" || parsedBody === null || Array.isArray(parsedBody)) {
+    throw new HttpError(400, "Request body must be a JSON object.");
   }
 
-  if (!KNOWN_PROVIDERS.has(provider)) {
-    const error = new Error(`Unknown provider "${provider}".`);
-    error.status = 400;
-    throw error;
+  const { provider, baseUrl: clientBaseUrl, apiKey: clientApiKey, ...rest } = parsedBody;
+
+  if (!provider) throw new HttpError(400, 'Request is missing a "provider" field.');
+  if (!KNOWN_PROVIDERS.has(provider)) throw new HttpError(400, `Unknown provider "${provider}".`);
+
+  if (provider === "custom" && !allowCustom) {
+    throw new HttpError(403, "The custom provider is only available when running the app locally.");
   }
 
-  // "custom" targets a self-hosted/personal endpoint the client supplies directly —
-  // there is no server-side secret to protect for a local, unauthenticated model server.
-  const config =
-    provider === "custom"
-      ? { apiKey: clientApiKey || "", baseUrl: clientBaseUrl }
-      : getProviderConfig(provider);
+  const llmBody = validateLlmBody(rest, provider);
 
-  if (provider === "custom" && !config.baseUrl) {
-    const error = new Error("Custom provider requires a baseUrl.");
-    error.status = 400;
-    throw error;
-  }
-
-  if (provider !== "custom" && !config.apiKey) {
-    const error = new Error(`No API key configured for "${provider}".`);
-    error.status = 500;
-    throw error;
+  let config;
+  if (provider === "custom") {
+    if (clientApiKey !== undefined && typeof clientApiKey !== "string") {
+      throw new HttpError(400, "apiKey must be a string.");
+    }
+    config = { apiKey: clientApiKey || "", baseUrl: validateCustomBaseUrl(clientBaseUrl) };
+  } else {
+    config = getProviderConfig(provider);
+    if (!config.apiKey) throw new HttpError(500, `No API key configured for "${provider}".`);
   }
 
   return callProvider(provider, llmBody, config);

@@ -1,12 +1,16 @@
-export const ANTHROPIC_MODELS = [
-  { id: "claude-haiku-4-5", label: "Haiku 4.5 — fastest" },
-  { id: "claude-sonnet-5", label: "Sonnet 5 — balanced" },
-  { id: "claude-opus-5", label: "Opus 5 — most precise" },
-];
+import { ANTHROPIC_MODELS } from "../../shared/models.js";
+
+export { ANTHROPIC_MODELS };
+
+// The custom provider is served only by the local dev server (see server/router.js);
+// a production deployment rejects it, so it isn't offered in production builds
+// unless VITE_ENABLE_CUSTOM_PROVIDER=true (pair with ALLOW_CUSTOM_PROVIDER=true on the server).
+const CUSTOM_PROVIDER_ENABLED =
+  import.meta.env.DEV || import.meta.env.VITE_ENABLE_CUSTOM_PROVIDER === "true";
 
 // modelInput: "select" (curated list above) or "text" (provider names change often
 // enough — GPT/Gemini/DeepSeek model IDs — that we don't hardcode and risk a stale guess).
-export const PROVIDERS = [
+const ALL_PROVIDERS = [
   { id: "anthropic", label: "Anthropic (Claude)", modelInput: "select" },
   { id: "openai", label: "OpenAI (GPT)", modelInput: "text", placeholder: "e.g. gpt-5.1" },
   { id: "gemini", label: "Google Gemini", modelInput: "text", placeholder: "e.g. gemini-3-pro" },
@@ -20,6 +24,8 @@ export const PROVIDERS = [
     needsApiKey: true,
   },
 ];
+
+export const PROVIDERS = ALL_PROVIDERS.filter((p) => p.id !== "custom" || CUSTOM_PROVIDER_ENABLED);
 
 export const DEFAULT_PROVIDER = "anthropic";
 export const DEFAULT_MODEL = "claude-sonnet-5";
@@ -52,7 +58,7 @@ async function callLlm(userText, systemText, llmConfig) {
     body: JSON.stringify(body),
   });
 
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
     throw new Error(data.error || `Request failed (${res.status})`);

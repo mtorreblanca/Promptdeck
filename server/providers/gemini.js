@@ -1,7 +1,9 @@
+import { postJson } from "./http.js";
+
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
 // Normalized contract: call(body, apiKey) -> { text, model }
-// body: { model, system?, messages: [{role, content}], max_tokens }
+// body (already validated): { model, system?, messages: [{role, content}], max_tokens }
 export async function call(body, apiKey) {
   const { model, system, messages, max_tokens } = body;
 
@@ -16,19 +18,13 @@ export async function call(body, apiKey) {
     ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
   };
 
-  const res = await fetch(`${BASE_URL}/${model}:generateContent?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+  // The key goes in a header, not the query string, so it never ends up in
+  // URL logs; the model id is encoded so it can't alter the request path.
+  const data = await postJson(`${BASE_URL}/${encodeURIComponent(model)}:generateContent`, {
+    providerName: "Gemini",
+    headers: { "x-goog-api-key": apiKey },
+    body: payload,
   });
-
-  const data = await res.json();
-
-  if (!res.ok) {
-    const error = new Error(data?.error?.message || `Gemini API error (${res.status})`);
-    error.status = res.status;
-    throw error;
-  }
 
   const text = (data.candidates?.[0]?.content?.parts || [])
     .map((p) => p.text || "")
